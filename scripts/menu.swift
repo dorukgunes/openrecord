@@ -53,8 +53,9 @@ let items = menuItems(statusItem)
 
 switch command {
 case "list":
-    for (_, title, depth) in items where !title.isEmpty {
-        print(String(repeating: "  ", count: depth) + title)
+    for (item, title, depth) in items where !title.isEmpty {
+        let checked = (attribute(item, "AXMenuItemMarkChar") as? String).map { _ in " ✓" } ?? ""
+        print(String(repeating: "  ", count: depth) + title + checked)
     }
     AXUIElementPerformAction(statusItem, kAXCancelAction as CFString)
 case "open":
