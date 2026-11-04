@@ -1,4 +1,4 @@
-.PHONY: app install whisper test test-capture smoke clean
+.PHONY: app install whisper test test-capture smoke release clean
 
 app:
 	./scripts/build-app.sh
@@ -19,5 +19,8 @@ test-capture:
 smoke: app
 	python3 scripts/mcp_smoke_test.py build/OpenRecord.app/Contents/MacOS/openrecord-mcp
 
+release:
+	./scripts/release.sh
+
 clean:
-	rm -rf .build build
+	rm -rf .build build dist

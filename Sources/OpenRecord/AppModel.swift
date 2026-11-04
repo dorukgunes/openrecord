@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import OpenRecordCore
+import ServiceManagement
 import os
 
 let log = Logger(subsystem: "io.github.dorukgunes.openrecord", category: "app")
@@ -20,7 +21,13 @@ final class AppModel {
     private(set) var displays: [DisplayOption] = []
     private(set) var recent: [Recording] = []
     private(set) var lastError: String?
+    /// System Settings pane that fixes `lastError`, when it's a missing permission.
+    private(set) var privacySettingsURL: URL?
     private(set) var transcriptionSetupError: String?
+    private(set) var launchesAtLogin = SMAppService.mainApp.status == .enabled
+
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    static let repositoryURL = URL(string: "https://github.com/dorukgunes/openrecord")!
 
     var selectedDisplayID: CGDirectDisplayID? {
         didSet { UserDefaults.standard.set(selectedDisplayID.map { Int($0) }, forKey: "displayID") }
@@ -70,7 +77,7 @@ final class AppModel {
     }
 
     var transcribingCount: Int {
-        recent.filter { [.pending, .transcribing].contains($0.transcriptStatus) && $0.status == .ready }.count
+        recent.filter { $0.status == .ready && $0.transcriptError == nil && [.pending, .transcribing].contains($0.transcriptStatus) }.count
     }
 
     var mcpServerPath: String {
@@ -97,9 +104,11 @@ final class AppModel {
     }
 
     func checkTranscriptionSetup() {
+        let wasMissing = transcriptionSetupError != nil
         do {
             _ = try WhisperTranscriber.locate()
             transcriptionSetupError = nil
+            if wasMissing { Task { await transcriptions.enqueueUnfinished() } }
         } catch {
             transcriptionSetupError = error.localizedDescription
         }
@@ -107,6 +116,24 @@ final class AppModel {
 
     func clearError() {
         lastError = nil
+        privacySettingsURL = nil
+    }
+
+    func openPrivacySettings() {
+        if let privacySettingsURL { NSWorkspace.shared.open(privacySettingsURL) }
+    }
+
+    func setLaunchesAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+        launchesAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     func open(_ recording: Recording) {
@@ -142,7 +169,7 @@ final class AppModel {
     private func start() async {
         guard state == .idle, let displayID = selectedDisplayID else { return }
         state = .starting
-        lastError = nil
+        clearError()
         defer { refreshRecordings() }
 
         var recording: Recording
@@ -170,6 +197,13 @@ final class AppModel {
 
     private func failedToStart(_ error: Error) {
         lastError = error.localizedDescription
+        privacySettingsURL = switch error as? RecorderError {
+        case .screenRecordingDenied:
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        case .microphoneDenied:
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        default: nil
+        }
         log.error("Couldn't start recording: \(error.localizedDescription, privacy: .public)")
         state = .idle
     }

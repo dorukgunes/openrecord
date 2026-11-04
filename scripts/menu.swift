@@ -1,5 +1,5 @@
 // Drives OpenRecord's menu bar item through the Accessibility API, for end-to-end checks.
-// usage: swift scripts/menu.swift list | press "<menu item title prefix>" | hotkey
+// usage: swift scripts/menu.swift list | open | press "<menu item title prefix>" | hotkey
 // The calling terminal needs Accessibility permission.
 import AppKit
 import ApplicationServices
@@ -57,6 +57,8 @@ case "list":
         print(String(repeating: "  ", count: depth) + title)
     }
     AXUIElementPerformAction(statusItem, kAXCancelAction as CFString)
+case "open":
+    print("menu left open")
 case "press":
     let prefix = CommandLine.arguments[2]
     guard let (item, title, _) = items.first(where: { $0.1.hasPrefix(prefix) }) else {

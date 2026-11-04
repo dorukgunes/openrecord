@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in OpenRecord or its MCP server doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Press ⌃⌥⌘R
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recording
+        - Transcription
+        - MCP server
+        - Menu bar app / permissions
+        - Building from source
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 15.6.1, MacBook Pro M3
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenRecord version or commit
+      placeholder: 0.1.0 (shown in the menu) or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client (if relevant)
+      placeholder: Claude Code 2.x, Cursor 1.x, …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output of `log show --last 10m --info --predicate 'subsystem == "io.github.dorukgunes.openrecord"'`. Remove anything private, including transcript text.
+      render: text

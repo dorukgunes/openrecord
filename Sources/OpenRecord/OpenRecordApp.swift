@@ -36,6 +36,9 @@ struct MenuContent: View {
         }
         if let error = model.lastError {
             Button("⚠︎ \(error)") { model.clearError() }
+            if model.privacySettingsURL != nil {
+                Button("Open Privacy Settings…") { model.openPrivacySettings() }
+            }
         }
 
         Divider()
@@ -80,6 +83,8 @@ struct MenuContent: View {
 
         Divider()
 
+        Toggle("Launch at Login", isOn: Binding(get: { model.launchesAtLogin }, set: { model.setLaunchesAtLogin($0) }))
+        Button("OpenRecord \(AppModel.version) on GitHub") { NSWorkspace.shared.open(AppModel.repositoryURL) }
         Button("Quit OpenRecord") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
     }
@@ -106,6 +111,7 @@ struct MenuContent: View {
         case (.recording, _): "recording"
         case (.failed, _): "failed"
         case (_, .done): "transcribed"
+        case (_, .pending) where recording.transcriptError != nil: "waiting for whisper"
         case (_, .pending), (_, .transcribing): "transcribing"
         case (_, .noAudio): "no audio"
         case (_, .failed): "transcription failed"

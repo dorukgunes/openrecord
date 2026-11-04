@@ -5,6 +5,7 @@ public actor TranscriptionQueue {
     private let library: RecordingLibrary
     private let makeTranscriber: @Sendable () throws -> WhisperTranscriber
     private var queued: [String] = []
+    private var inFlight: String?
     private var worker: Task<Void, Never>?
     private let onChange: @Sendable () -> Void
 
@@ -19,13 +20,13 @@ public actor TranscriptionQueue {
     }
 
     public func enqueue(_ id: String) {
-        guard !queued.contains(id) else { return }
+        guard !queued.contains(id), inFlight != id else { return }
         queued.append(id)
         guard worker == nil else { return }
         worker = Task { await drain() }
     }
 
-    /// Picks up recordings left untranscribed, e.g. because the app quit mid-transcription.
+    /// Picks up recordings left untranscribed: the app quit mid-transcription, or whisper wasn't installed yet.
     public func enqueueUnfinished() {
         for recording in library.recordings().reversed()
         where recording.status == .ready && [.pending, .transcribing].contains(recording.transcriptStatus) {
@@ -33,22 +34,40 @@ public actor TranscriptionQueue {
         }
     }
 
+    public func waitUntilIdle() async {
+        await worker?.value
+    }
+
     private func drain() async {
         while !queued.isEmpty {
-            await transcribe(queued.removeFirst())
+            let id = queued.removeFirst()
+            inFlight = id
+            await transcribe(id)
+            inFlight = nil
         }
         worker = nil
     }
 
     private func transcribe(_ id: String) async {
         guard var recording = try? library.recording(id: id) else { return }
+        let transcriber: WhisperTranscriber
+        do {
+            transcriber = try makeTranscriber()
+        } catch {
+            // Missing setup isn't this recording's fault: keep it pending so it's retried once whisper is installed.
+            recording.transcriptStatus = .pending
+            recording.transcriptError = error.localizedDescription
+            try? library.save(recording)
+            onChange()
+            return
+        }
+
         recording.transcriptStatus = .transcribing
         recording.transcriptError = nil
         try? library.save(recording)
         onChange()
 
         do {
-            let transcriber = try makeTranscriber()
             if let transcript = try await transcriber.transcribe(mediaURL: library.videoURL(for: recording)) {
                 try library.saveTranscript(transcript, for: id)
                 recording.transcriptStatus = .done

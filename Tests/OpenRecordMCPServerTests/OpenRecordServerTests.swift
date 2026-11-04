@@ -12,7 +12,24 @@ struct OpenRecordServerTests {
         let (tools, _) = try await client.listTools()
 
         #expect(Set(tools.map(\.name)) == ["list_recordings", "get_recording", "get_transcript", "search_recordings", "get_frames"])
-        #expect(tools.allSatisfy { $0.annotations.readOnlyHint == true })
+        #expect(tools.allSatisfy { $0.title != nil })
+        #expect(tools.allSatisfy {
+            $0.annotations.readOnlyHint == true && $0.annotations.idempotentHint == true && $0.annotations.openWorldHint == false
+        })
+    }
+
+    @Test func rejectsUnknownToolsAsProtocolErrors() async throws {
+        let (client, _) = try await connect(library: RecordingLibrary(root: try Fixtures.temporaryDirectory()))
+
+        await #expect(throws: MCPError.self) { try await client.callTool(name: "delete_everything", arguments: [:]) }
+    }
+
+    @Test func truncatesVeryLongSearchQueries() async throws {
+        let (client, _) = try await connect(library: RecordingLibrary(root: try Fixtures.temporaryDirectory()))
+
+        let json = try await callJSON(client, "search_recordings", ["query": .string(String(repeating: "a", count: 5000))])
+
+        #expect((json["query"] as? String)?.count == 200)
     }
 
     @Test func listsRecordingsNewestFirstWithTranscriptPreview() async throws {
