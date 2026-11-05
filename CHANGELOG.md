@@ -6,7 +6,9 @@ All notable changes to OpenRecord are documented here. The format follows
 
 ## [Unreleased]
 
-First public version, 0.1.0.
+## [0.1.0] - 2026-11-05
+
+First public version.
 
 ### Added
 
@@ -18,6 +20,7 @@ First public version, 0.1.0.
   `get_transcript`, `search_recordings` and `get_frames`.
 - Recovery for recordings cut off by a quit or crash, links to System Settings when a permission is missing, and
   Launch at Login.
-- Hardened-runtime signing, plus `scripts/release.sh` to build a notarized release with checksums.
+- A signed and notarized download on GitHub Releases, built by `scripts/release.sh` with checksums.
 
-[Unreleased]: https://github.com/dorukgunes/openrecord/commits/main
+[Unreleased]: https://github.com/dorukgunes/openrecord/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/dorukgunes/openrecord/releases/tag/v0.1.0

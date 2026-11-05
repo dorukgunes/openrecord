@@ -8,9 +8,9 @@ public enum TranscriptionError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .whisperNotInstalled:
-            "whisper-cli not found. Run scripts/setup-whisper.sh (or `brew install whisper-cpp`)."
+            "whisper-cli not found. Choose Set Up Transcription… in the OpenRecord menu."
         case .modelMissing(let url):
-            "Whisper model missing at \(url.path). Run scripts/setup-whisper.sh."
+            "Whisper model missing at \(url.path). Choose Set Up Transcription… in the OpenRecord menu."
         case .whisperFailed(let status, let output):
             "whisper-cli exited with \(status): \(output.suffix(500))"
         }

@@ -40,12 +40,22 @@ No account, no cloud, no upload. Recordings and transcripts stay in `~/Movies/Op
 ## Requirements
 
 - macOS 15 Sequoia or later, Apple silicon (Intel Macs are untested)
-- Xcode 26.1 or later (Swift 6.2) to build
 - [Homebrew](https://brew.sh), for whisper.cpp
+- Xcode 26.1 or later (Swift 6.2), only to build from source
 
 ## Install
 
-OpenRecord is source-only for now. Building takes about a minute:
+### Download
+
+1. Download `OpenRecord-<version>.zip` from the [latest release](https://github.com/dorukgunes/openrecord/releases/latest),
+   unzip it, and move **OpenRecord** to Applications. It's signed with a Developer ID and notarized by Apple.
+2. Open it. The ◉ icon appears in the menu bar.
+3. Choose **Set Up Transcription…** in the menu. It opens Terminal to install whisper.cpp with Homebrew and download the
+   models (~575 MB), then choose **Check Again**.
+
+### Build from source
+
+Building takes about a minute:
 
 ```sh
 git clone https://github.com/dorukgunes/openrecord.git
