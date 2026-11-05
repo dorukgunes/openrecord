@@ -74,6 +74,10 @@ The first time you record, macOS asks for two permissions:
 macOS may ask you to reopen OpenRecord after you allow Screen Recording. The global hotkey uses Carbon's
 `RegisterEventHotKey`, so OpenRecord does **not** need Accessibility access.
 
+About once a month, macOS 15 also asks whether OpenRecord may *bypass the system private window picker and directly
+access your screen and audio*. Choose **Allow**. macOS asks this of every app that records a screen picked in the app
+instead of in Apple's picker. Despite the wording, OpenRecord never records system audio, only your microphone.
+
 ## Recording
 
 1. Press **⌃⌥⌘R**, or open the ◉ menu bar icon and choose **Start Recording**. Choose which screen to record under
