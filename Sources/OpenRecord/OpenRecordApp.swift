@@ -1,13 +1,15 @@
 import OpenRecordCore
+import Sparkle
 import SwiftUI
 
 @main
 struct OpenRecordApp: App {
     @State private var model = AppModel()
+    @State private var updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model)
+            MenuContent(model: model, checkForUpdates: { updater.checkForUpdates(nil) })
         } label: {
             if model.isRecording {
                 Label(model.elapsed, systemImage: "record.circle.fill")
@@ -22,9 +24,13 @@ struct OpenRecordApp: App {
 
 struct MenuContent: View {
     let model: AppModel
+    let checkForUpdates: () -> Void
 
     var body: some View {
         recordButton
+        Button("Record a Portion…") { model.recordPortion() }
+            .keyboardShortcut("r", modifiers: [.control, .option, .shift])
+            .disabled(model.state != .idle)
         if !model.displays.isEmpty {
             Picker("Display", selection: Binding(get: { model.selectedDisplayID }, set: { model.selectedDisplayID = $0 })) {
                 ForEach(model.displays) { display in
@@ -84,6 +90,7 @@ struct MenuContent: View {
         Divider()
 
         Toggle("Launch at Login", isOn: Binding(get: { model.launchesAtLogin }, set: { model.setLaunchesAtLogin($0) }))
+        Button("Check for Updates…", action: checkForUpdates)
         Button("OpenRecord \(AppModel.version) on GitHub") { NSWorkspace.shared.open(AppModel.repositoryURL) }
         Button("Quit OpenRecord") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
@@ -94,12 +101,14 @@ struct MenuContent: View {
         switch model.state {
         case .idle:
             Button("Start Recording") { model.toggleRecording() }
-                .keyboardShortcut("r", modifiers: [.control, .option, .command])
+                .keyboardShortcut("r", modifiers: [.control, .option])
         case .starting:
             Text("Starting…")
+        case .selecting:
+            Text("Select a portion…")
         case .recording:
             Button("Stop Recording (\(model.elapsed))") { model.toggleRecording() }
-                .keyboardShortcut("r", modifiers: [.control, .option, .command])
+                .keyboardShortcut("r", modifiers: [.control, .option])
         case .stopping:
             Text("Saving…")
         }

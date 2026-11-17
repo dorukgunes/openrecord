@@ -12,6 +12,7 @@ final class AppModel {
     enum State: Equatable {
         case idle
         case starting
+        case selecting
         case recording(id: String, since: Date)
         case stopping
     }
@@ -37,7 +38,9 @@ final class AppModel {
     @ObservationIgnored private var recorder: ScreenRecorder!
     @ObservationIgnored private var transcriptions: TranscriptionQueue!
     @ObservationIgnored private var hotKey: HotKey?
+    @ObservationIgnored private var areaHotKey: HotKey?
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var regionSelector: RegionSelector?
 
     init() {
         selectedDisplayID = (UserDefaults.standard.object(forKey: "displayID") as? Int).map(CGDirectDisplayID.init)
@@ -47,11 +50,16 @@ final class AppModel {
         transcriptions = TranscriptionQueue(library: library, onChange: { [weak self] in
             Task { @MainActor in self?.refreshRecordings() }
         })
-        hotKey = HotKey(keyCode: HotKey.keyR, modifiers: HotKey.controlOptionCommand) { [weak self] in
+        hotKey = HotKey(keyCode: HotKey.keyR, modifiers: HotKey.controlOption, id: 1) { [weak self] in
             log.info("Hotkey pressed")
             self?.toggleRecording()
         }
-        if hotKey == nil { log.error("Couldn't register ⌃⌥⌘R; another app may own it") }
+        if hotKey == nil { log.error("Couldn't register ⌃⌥R; another app may own it") }
+        areaHotKey = HotKey(keyCode: HotKey.keyR, modifiers: HotKey.controlOptionShift, id: 2) { [weak self] in
+            log.info("Area recording hotkey pressed")
+            self?.recordPortion()
+        }
+        if areaHotKey == nil { log.error("Couldn't register ⇧⌃⌥R; another app may own it") }
         log.info("OpenRecord started, library: \(self.library.root.path, privacy: .public)")
         refreshDisplays()
         refreshRecordings()
@@ -88,8 +96,40 @@ final class AppModel {
         switch state {
         case .idle: Task { await start() }
         case .recording: Task { await stop() }
-        case .starting, .stopping: break
+        case .starting, .selecting, .stopping: break
         }
+    }
+
+    func recordPortion() {
+        guard state == .idle, let displayID = selectedDisplayID,
+              let screen = NSScreen.screens.first(where: {
+                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID
+              }) else { return }
+        state = .starting
+        Task {
+            do {
+                _ = try await recorder.prepareForCapture()
+                guard state == .starting else { return }
+                state = .selecting
+                presentRegionSelector(on: screen)
+            } catch {
+                failedToStart(error)
+            }
+        }
+    }
+
+    private func presentRegionSelector(on screen: NSScreen) {
+        let selector = RegionSelector(screen: screen) { [weak self] rect in
+            Task { @MainActor in
+                guard let self else { return }
+                self.regionSelector = nil
+                guard let rect else { self.state = .idle; return }
+                self.state = .idle
+                await self.start(sourceRect: rect)
+            }
+        }
+        regionSelector = selector
+        selector.show()
     }
 
     func refreshDisplays() {
@@ -166,7 +206,7 @@ final class AppModel {
         NSPasteboard.general.setString(string, forType: .string)
     }
 
-    private func start() async {
+    private func start(sourceRect: CGRect? = nil) async {
         guard state == .idle, let displayID = selectedDisplayID else { return }
         state = .starting
         clearError()
@@ -179,7 +219,7 @@ final class AppModel {
             return failedToStart(error)
         }
         do {
-            let started = try await recorder.start(display: displayID, to: library.videoURL(for: recording))
+            let started = try await recorder.start(display: displayID, to: library.videoURL(for: recording), sourceRect: sourceRect)
             recording.displayName = started.display.name
             recording.width = started.display.pixelWidth
             recording.height = started.display.pixelHeight
@@ -226,30 +266,37 @@ final class AppModel {
         Task { await finish(id: id, error: error) }
     }
 
-    /// Recordings still marked as recording at launch were cut off by a quit or crash.
+    /// Recover recordings left in progress by probing whether ScreenCaptureKit finalized the file.
     private func recoverInterruptedRecordings() async {
         for recording in library.recordings() where recording.status == .recording {
-            await finish(id: recording.id, error: RecorderError.interrupted)
+            await finish(id: recording.id, error: nil, recovering: true)
         }
     }
 
-    private func finish(id: String, error: Error?) async {
+    private func finish(id: String, error: Error?, recovering: Bool = false) async {
         ticker?.cancel()
         guard var recording = try? library.recording(id: id) else {
             state = .idle
             return
         }
         // A capture error can still leave a playable file behind (e.g. the display was unplugged).
-        if let duration = try? await FrameExtractor.duration(of: library.videoURL(for: recording)), duration > 0 {
+        if let duration = try? await FrameExtractor.duration(
+            of: library.videoURL(for: recording), timeout: .seconds(10)
+        ), duration > 0 {
             recording.status = .ready
             recording.duration = duration
         } else {
             recording.status = .failed
             recording.transcriptStatus = .failed
+            if recovering { recording.error = RecorderError.interrupted.localizedDescription }
         }
-        recording.error = error?.localizedDescription
-        lastError = error?.localizedDescription
-        log.info("Recording \(id, privacy: .public) finished: \(recording.status.rawValue, privacy: .public) \(error?.localizedDescription ?? "", privacy: .public)")
+        if recording.status == .ready {
+            recording.error = nil
+        } else if !recovering {
+            recording.error = error?.localizedDescription
+        }
+        lastError = recording.error
+        log.notice("Recording \(id, privacy: .public) finalized as \(recording.status.rawValue, privacy: .public); recovery=\(recovering, privacy: .public), error=\(recording.error ?? "", privacy: .public)")
         try? library.save(recording)
         state = .idle
         refreshRecordings()

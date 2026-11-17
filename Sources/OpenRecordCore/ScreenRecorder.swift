@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import ScreenCaptureKit
 import Synchronization
+import os
 
 public struct DisplayOption: Sendable, Hashable, Identifiable {
     public let id: CGDirectDisplayID
@@ -17,6 +18,7 @@ public enum RecorderError: LocalizedError {
     case alreadyRecording
     case notRecording
     case startTimedOut
+    case stopTimedOut
     case interrupted
 
     public var errorDescription: String? {
@@ -29,13 +31,15 @@ public enum RecorderError: LocalizedError {
         case .alreadyRecording: "A recording is already in progress."
         case .notRecording: "No recording is in progress."
         case .startTimedOut: "Screen capture didn't start within 5 seconds."
-        case .interrupted: "OpenRecord quit while this recording was in progress."
+        case .stopTimedOut: "Screen capture didn't finish within 10 seconds."
+        case .interrupted: "OpenRecord stopped before this recording finished; the file may be incomplete."
         }
     }
 }
 
 /// Records one display plus the default microphone into a single MP4 using ScreenCaptureKit.
 public final class ScreenRecorder: NSObject, Sendable {
+    private static let log = Logger(subsystem: "io.github.dorukgunes.openrecord", category: "recorder")
     public struct Started: Sendable {
         public let display: DisplayOption
         public let microphone: String?
@@ -73,18 +77,14 @@ public final class ScreenRecorder: NSObject, Sendable {
     }
 
     @MainActor
-    public func start(display displayID: CGDirectDisplayID, to url: URL, captureMicrophone: Bool = true) async throws -> Started {
+    public func start(
+        display displayID: CGDirectDisplayID,
+        to url: URL,
+        sourceRect: CGRect? = nil,
+        captureMicrophone: Bool = true
+    ) async throws -> Started {
         guard session.withLock({ $0 == nil }) else { throw RecorderError.alreadyRecording }
-        // Ask for the microphone first: the screen prompt sends the user off to System Settings,
-        // and asking in this order gets both prompts out of the way on the first attempt.
-        let microphone = captureMicrophone ? AVCaptureDevice.default(for: .audio) : nil
-        if captureMicrophone {
-            guard await AVCaptureDevice.requestAccess(for: .audio) else { throw RecorderError.microphoneDenied }
-        }
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-            throw RecorderError.screenRecordingDenied
-        }
-
+        let microphone = try await prepareForCapture(captureMicrophone: captureMicrophone)
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }),
               let option = Self.availableDisplays().first(where: { $0.id == displayID })
@@ -94,8 +94,18 @@ public final class ScreenRecorder: NSObject, Sendable {
         let filter = SCContentFilter(display: display, excludingApplications: ownApp, exceptingWindows: [])
 
         let config = SCStreamConfiguration()
-        config.width = option.pixelWidth
-        config.height = option.pixelHeight
+        let scale = CGFloat(option.pixelWidth) / display.frame.width
+        if let sourceRect {
+            let bounds = CGRect(origin: .zero, size: display.frame.size)
+            let crop = sourceRect.standardized.intersection(bounds)
+            guard !crop.isNull, crop.width >= 32, crop.height >= 32 else { throw RecorderError.displayNotFound }
+            config.sourceRect = crop
+            config.width = Int((crop.width * scale).rounded())
+            config.height = Int((crop.height * scale).rounded())
+        } else {
+            config.width = option.pixelWidth
+            config.height = option.pixelHeight
+        }
         config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         config.showsCursor = true
         config.capturesAudio = false
@@ -105,8 +115,7 @@ public final class ScreenRecorder: NSObject, Sendable {
         let recordingConfig = SCRecordingOutputConfiguration()
         recordingConfig.outputURL = url
         recordingConfig.outputFileType = .mp4
-        // H.264 tops out at 4096 px; larger (5K/6K) displays need HEVC.
-        recordingConfig.videoCodecType = max(option.pixelWidth, option.pixelHeight) > 4096 ? .hevc : .h264
+        recordingConfig.videoCodecType = max(config.width, config.height) > 4096 ? .hevc : .h264
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addRecordingOutput(SCRecordingOutput(configuration: recordingConfig, delegate: self))
@@ -114,8 +123,6 @@ public final class ScreenRecorder: NSObject, Sendable {
         session.withLock { $0 = current }
         do {
             try await stream.startCapture()
-            // Stopping before the first frame is written fails the whole file, so only report
-            // "recording" once ScreenCaptureKit says the file has started.
             Task { [started = current.started] in
                 try? await Task.sleep(for: .seconds(5))
                 started.complete(.failure(RecorderError.startTimedOut))
@@ -129,17 +136,56 @@ public final class ScreenRecorder: NSObject, Sendable {
         return Started(display: option, microphone: microphone?.localizedName)
     }
 
+    @MainActor
+    public func prepareForCapture(captureMicrophone: Bool = true) async throws -> AVCaptureDevice? {
+        // Ask for the microphone first: the screen prompt sends the user off to System Settings,
+        // and asking in this order gets both prompts out of the way on the first attempt.
+        let microphone = captureMicrophone ? AVCaptureDevice.default(for: .audio) : nil
+        if captureMicrophone {
+            guard await AVCaptureDevice.requestAccess(for: .audio) else { throw RecorderError.microphoneDenied }
+        }
+        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
+            throw RecorderError.screenRecordingDenied
+        }
+        return microphone
+    }
+
     /// Returns once the MP4 is fully written.
     public func stop() async throws {
         guard let current = session.withLock({ $0 }) else { throw RecorderError.notRecording }
         defer { session.withLock { $0 = nil } }
-        try await current.stream.stopCapture()
-        try await current.finished.wait()
+        Self.log.notice("Stopping ScreenCaptureKit stream")
+        let stopResult = Completion()
+        Task {
+            do {
+                try await current.stream.stopCapture()
+                stopResult.complete(.success(()))
+            } catch {
+                stopResult.complete(.failure(error))
+            }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            stopResult.complete(.failure(RecorderError.stopTimedOut))
+        }
+        do { try await stopResult.wait() } catch {
+            Self.log.error("stopCapture failed or timed out: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            current.finished.complete(.failure(RecorderError.stopTimedOut))
+        }
+        do { try await current.finished.wait() } catch {
+            Self.log.error("Timed out waiting for recording finish callback: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
     }
 }
 
 extension ScreenRecorder: SCStreamDelegate {
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
+        Self.log.error("ScreenCaptureKit didStopWithError: \(error.localizedDescription, privacy: .public)")
         guard let current = session.withLock({ state in defer { state = nil }; return state }) else { return }
         current.started.complete(.failure(error))
         current.finished.complete(.failure(error))
@@ -149,14 +195,17 @@ extension ScreenRecorder: SCStreamDelegate {
 
 extension ScreenRecorder: SCRecordingOutputDelegate {
     public func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
+        Self.log.notice("ScreenCaptureKit recording output started")
         session.withLock { $0 }?.started.complete(.success(()))
     }
 
     public func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
+        Self.log.notice("ScreenCaptureKit recording output finished")
         session.withLock { $0 }?.finished.complete(.success(()))
     }
 
     public func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
+        Self.log.error("ScreenCaptureKit recording output failed: \(error.localizedDescription, privacy: .public)")
         guard let current = session.withLock({ $0 }) else { return }
         current.started.complete(.failure(error))
         current.finished.complete(.failure(error))

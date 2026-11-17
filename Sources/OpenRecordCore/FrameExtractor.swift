@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import Synchronization
 
 public enum FrameExtractor {
     public struct Frame: Sendable {
@@ -24,8 +25,48 @@ public enum FrameExtractor {
         }
     }
 
-    public static func duration(of url: URL) async throws -> Double {
-        try await AVURLAsset(url: url).load(.duration).seconds
+    public static func duration(of url: URL, timeout: Duration? = nil) async throws -> Double {
+        guard let timeout else { return try await AVURLAsset(url: url).load(.duration).seconds }
+        let result = DurationResult()
+        Task {
+            do { result.complete(.success(try await AVURLAsset(url: url).load(.duration).seconds)) }
+            catch { result.complete(.failure(error)) }
+        }
+        Task {
+            try? await Task.sleep(for: timeout)
+            result.complete(.failure(DurationProbeError.timedOut))
+        }
+        return try await result.wait()
+    }
+
+    private enum DurationProbeError: Swift.Error { case timedOut }
+
+    private final class DurationResult: Sendable {
+        private struct State {
+            var result: Result<Double, Swift.Error>?
+            var waiter: CheckedContinuation<Double, Swift.Error>?
+        }
+        private let state = Mutex(State())
+
+        func complete(_ result: Result<Double, Swift.Error>) {
+            let waiter = state.withLock { state -> CheckedContinuation<Double, Swift.Error>? in
+                guard state.result == nil else { return nil }
+                state.result = result
+                defer { state.waiter = nil }
+                return state.waiter
+            }
+            waiter?.resume(with: result)
+        }
+
+        func wait() async throws -> Double {
+            try await withCheckedThrowingContinuation { continuation in
+                let result = state.withLock { state -> Result<Double, Swift.Error>? in
+                    if state.result == nil { state.waiter = continuation }
+                    return state.result
+                }
+                if let result { continuation.resume(with: result) }
+            }
+        }
     }
 
     /// `count` frames spread evenly across the video, skipping the very first and last moments.

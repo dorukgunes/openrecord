@@ -6,6 +6,23 @@ All notable changes to OpenRecord are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-16
+
+### Added
+
+- Record a selected screen region with a drag overlay, Escape/click cancellation, and a dedicated global shortcut.
+- Check for and install app updates in-app with Sparkle.
+
+### Fixed
+
+- Bound stop and media-duration waits so a missing ScreenCaptureKit callback cannot leave a recording stuck saving.
+- Recover finalized recordings from disk and queue transcription after a stalled stop callback.
+- Log recording stop/finalization and ScreenCaptureKit callback events at visible log levels.
+
+### Changed
+
+- Use ⌃⌥R for whole-display recording and ⇧⌃⌥R for area recording.
+
 ## [0.1.0] - 2026-11-05
 
 First public version.
@@ -22,5 +39,6 @@ First public version.
   Launch at Login.
 - A signed and notarized download on GitHub Releases, built by `scripts/release.sh` with checksums.
 
-[Unreleased]: https://github.com/dorukgunes/openrecord/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dorukgunes/openrecord/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/dorukgunes/openrecord/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dorukgunes/openrecord/releases/tag/v0.1.0

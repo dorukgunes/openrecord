@@ -12,6 +12,7 @@ let package = Package(
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         // swift-log 1.17 uses `@nonexhaustive`, which needs a newer compiler than Swift 6.2 (Xcode 26.1).
         .package(url: "https://github.com/apple/swift-log.git", "1.6.0"..<"1.17.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.1"),
     ],
     targets: [
         .target(name: "OpenRecordCore"),
@@ -19,7 +20,7 @@ let package = Package(
             name: "OpenRecordMCPServer",
             dependencies: ["OpenRecordCore", .product(name: "MCP", package: "swift-sdk")]
         ),
-        .executableTarget(name: "OpenRecord", dependencies: ["OpenRecordCore"]),
+        .executableTarget(name: "OpenRecord", dependencies: ["OpenRecordCore", .product(name: "Sparkle", package: "Sparkle")]),
         .executableTarget(
             name: "OpenRecordMCP",
             dependencies: ["OpenRecordMCPServer", .product(name: "MCP", package: "swift-sdk")]

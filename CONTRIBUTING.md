@@ -34,7 +34,7 @@ terminal.
 
 ```sh
 open --env OPENRECORD_LIBRARY=/tmp/or-test build/OpenRecord.app
-swift scripts/menu.swift hotkey          # start recording (⌃⌥⌘R)
+swift scripts/menu.swift hotkey          # start recording (⌃⌥R)
 say "The export button on the reports page does nothing."
 swift scripts/menu.swift hotkey          # stop
 OPENRECORD_LIBRARY=/tmp/or-test python3 scripts/mcp_smoke_test.py
@@ -57,15 +57,7 @@ OPENRECORD_LIBRARY=/tmp/or-test python3 scripts/mcp_smoke_test.py
 
 ## Releasing (maintainers)
 
-1. Bump `CFBundleShortVersionString` and `CFBundleVersion` in `Resources/Info.plist`. The MCP server reads its version
-   from there.
-2. Move the **Unreleased** notes in `CHANGELOG.md` under the new version.
-3. One time only, store notarization credentials with an app-specific password from account.apple.com:
-   `xcrun notarytool store-credentials openrecord-notary --apple-id <id> --team-id <team>`
-4. `NOTARY_PROFILE=openrecord-notary make release`. This writes a signed, notarized and stapled zip plus
-   `SHA256SUMS.txt` to `dist/`.
-5. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`, then
-   `gh release create vX.Y.Z dist/* --verify-tag --title "OpenRecord X.Y.Z" --notes-file notes.md`, with the version's
-   `CHANGELOG.md` section in `notes.md`.
+See [RELEASING.md](RELEASING.md) for the full release and in-app update procedure, including Sparkle key setup,
+appcast generation, notarization, and GitHub Release assets.
 
 If you change `docs/assets/logo.svg`, regenerate the app icon with `swift scripts/make-icon.swift`.

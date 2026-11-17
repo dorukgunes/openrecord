@@ -28,7 +28,7 @@ No account, no cloud, no upload. Recordings and transcripts stay in `~/Movies/Op
 
 ## Features
 
-- **One-key recording**: press **⌃⌥⌘R** anywhere, or use the menu bar, to record a whole display plus your microphone
+- **One-key recording**: press **⌃⌥R** anywhere, or use the menu bar, to record a whole display plus your microphone
   into a single MP4.
 - **On-device transcription** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
   (`large-v3-turbo`, Metal-accelerated), with voice-activity detection so silence doesn't turn into invented text. The
@@ -90,10 +90,11 @@ instead of in Apple's picker. Despite the wording, OpenRecord never records syst
 
 ## Recording
 
-1. Press **⌃⌥⌘R**, or open the ◉ menu bar icon and choose **Start Recording**. Choose which screen to record under
-   **Display**.
+1. Press **⌃⌥R** to record the selected display, or **⇧⌃⌥R** (Shift-Control-Option-R) to select and record
+   a portion. You can also choose **Start Recording** or **Record a Portion…** from the ◉ menu bar icon. Choose which
+   screen to record under **Display**.
 2. Talk through what you're doing. The menu bar shows the elapsed time.
-3. Press **⌃⌥⌘R** again to stop. OpenRecord saves the video and transcribes it in the background. A few seconds
+3. Press **⌃⌥R** again to stop either kind of recording. OpenRecord saves the video and transcribes it in the background. A few seconds
    later, **Recent Recordings** shows it as *transcribed*.
 
 Each recording is one folder:
@@ -229,9 +230,9 @@ Again** on a recording under **Recent Recordings**.
 </details>
 
 <details>
-<summary><b>⌃⌥⌘R does nothing</b></summary>
+<summary><b>⌃⌥R does nothing</b></summary>
 
-Another app probably owns the shortcut. Check the log for `Couldn't register ⌃⌥⌘R`:
+Another app probably owns the shortcut. Check the log for `Couldn't register ⌃⌥R`:
 
 ```sh
 log show --last 10m --info --predicate 'subsystem == "io.github.dorukgunes.openrecord"'

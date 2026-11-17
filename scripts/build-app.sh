@@ -9,8 +9,10 @@ BIN="$(swift build -c release --show-bin-path)"
 
 APP=build/OpenRecord.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/OpenRecord" "$BIN/openrecord-mcp" "$APP/Contents/MacOS/"
+cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/"
+install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/OpenRecord"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns scripts/setup-whisper.sh "$APP/Contents/Resources/"
 
@@ -23,7 +25,14 @@ SIGN=(codesign --force --options runtime --sign "$IDENTITY")
 [[ "$IDENTITY" != "-" ]] && SIGN+=(--timestamp)
 
 # Hardened runtime blocks the microphone unless the audio-input entitlement is present.
+"${SIGN[@]}" --deep "$APP/Contents/Frameworks/Sparkle.framework"
 "${SIGN[@]}" "$APP/Contents/MacOS/openrecord-mcp"
-"${SIGN[@]}" --entitlements Resources/OpenRecord.entitlements "$APP"
+APP_ENTITLEMENTS=Resources/OpenRecord.entitlements
+if [[ "$IDENTITY" == "-" ]]; then
+  APP_ENTITLEMENTS=build/OpenRecord-dev.entitlements
+  cp Resources/OpenRecord.entitlements "$APP_ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$APP_ENTITLEMENTS"
+fi
+"${SIGN[@]}" --entitlements "$APP_ENTITLEMENTS" "$APP"
 codesign --verify --strict "$APP"
 echo "Built $APP (signed: $IDENTITY)"
